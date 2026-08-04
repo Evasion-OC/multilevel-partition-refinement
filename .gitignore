@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.DS_Store
+data/pool/
+data/.pyg_cache/
+data/.ssget_cache/
+logs/
+runs/
+results/*.jsonl
+checkpoints/*.pt
+*.part.*
