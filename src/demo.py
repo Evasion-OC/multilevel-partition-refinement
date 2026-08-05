@@ -12,9 +12,10 @@ What CAN be shown live:
       of the eigenvectors, rotation inside a degenerate eigenspace;
   (3) the global branch is linear where dense attention is quadratic, on the
       same encoder object the pipeline uses;
-  (4) the pipeline runs end to end on a real archive graph: the refiner engages
-      at every gated level, the guard returns its verdict, and the cut is
-      compared with METIS at the same (reduced) trial budget.
+  (4) the pipeline runs end to end on six real archive graphs: the refiner
+      engages at every gated level, the guard returns its verdict, and the cut
+      is compared with METIS at the same (reduced) trial budget, and with
+      KaHIP eco, KaHIP strong and Scotch at their own presets.
 
 Everything below imports the real repository modules. Nothing is reimplemented
 for the demo, which is the point: a marker can follow any number here back into
@@ -72,6 +73,48 @@ def rand_graph(n, deg=6, seed=0):
     A.sum_duplicates()
     A.data[:] = 1.0
     return Graph(A)
+
+
+def run_kahip(path, k, eps, seed, preconfig):
+    """KaHIP (kaffpa) on the METIS file, one run at the named preset."""
+    import shutil as _sh, subprocess, tempfile
+    if _sh.which("kaffpa") is None:
+        return None
+    outp = tempfile.mktemp(suffix=".part")
+    try:
+        subprocess.run(["kaffpa", path, f"--k={k}", f"--imbalance={round(eps * 100)}",
+                        f"--preconfiguration={preconfig}", f"--seed={seed}",
+                        f"--output_filename={outp}"],
+                       capture_output=True, text=True, check=True)
+        return np.loadtxt(outp, dtype=int)
+    except Exception:
+        return None
+    finally:
+        if os.path.exists(outp):
+            os.remove(outp)
+
+
+def run_scotch(path, k, eps, n):
+    """Scotch (gcv + gpart) on the METIS file, one run at the default strategy."""
+    import shutil as _sh, subprocess, tempfile
+    if _sh.which("gpart") is None or _sh.which("gcv") is None:
+        return None
+    grf, mp = tempfile.mktemp(suffix=".grf"), tempfile.mktemp(suffix=".map")
+    try:
+        subprocess.run(["gcv", "-ic", "-os", path, grf],
+                       capture_output=True, text=True, check=True)
+        subprocess.run(["gpart", f"-b{eps}", str(k), grf, mp],
+                       capture_output=True, text=True, check=True)
+        part = np.empty(n, dtype=int)
+        pairs = np.array(open(mp).read().split()[1:], dtype=int).reshape(-1, 2)
+        part[pairs[:, 0] - pairs[:, 0].min()] = pairs[:, 1]
+        return part
+    except Exception:
+        return None
+    finally:
+        for f in (grf, mp):
+            if os.path.exists(f):
+                os.remove(f)
 
 
 def find_checkpoint():
@@ -282,23 +325,43 @@ def main():
             try:
                 from benchmark import run_metis
                 m = run_metis(Gr, k, ncuts=LIVE_BOK, seeds=(LIVE_SEED,))
-                r = cut / m["cut"]
+                mc, r = m["cut"], cut / m["cut"]
                 verdict = "win" if r < 0.995 else "tie" if r <= 1.005 else "loss"
-                print(f"  METIS           cut = {m['cut']:.0f}  at the same budget "
+                print(f"  METIS           cut = {mc:.0f}  at the same budget "
                       f"(ncuts = {LIVE_BOK}, seed {LIVE_SEED})")
                 print(f"  ratio           r = {r:.3f}  at the live budget ({verdict})")
-                summary.append((gname, cut, m["cut"], r, verdict, arm))
             except Exception as e:                    # pymetis absent: still a full run
                 print(f"  (METIS comparison unavailable: {e})")
-                summary.append((gname, cut, None, None, "n/a", arm))
+                mc, r, verdict = None, None, "n/a"
+            comps = {}
+            for label, pc in (("eco", run_kahip(gpath, k, 0.03, LIVE_SEED, "eco")),
+                              ("strong", run_kahip(gpath, k, 0.03, LIVE_SEED, "strong")),
+                              ("Scotch", run_scotch(gpath, k, 0.03, Gr.n))):
+                comps[label] = float(compute_edge_cut(Gr, pc)) if pc is not None else None
+            if any(v is not None for v in comps.values()):
+                shown = "  ·  ".join(f"KaHIP {kk} {v:.0f}" if kk != "Scotch" else f"Scotch {v:.0f}"
+                                     for kk, v in comps.items() if v is not None)
+                print(f"  comparators     {shown}   (one run each, own presets)")
+            summary.append((gname, cut, mc, comps, r, verdict))
         if len(summary) > 1:
             print()
-            print(f"  {'graph':24s} {'ours':>7} {'METIS':>7} {'r':>7}  verdict")
-            print(f"  {'-' * 24} {'-' * 7} {'-' * 7} {'-' * 7}  {'-' * 7}")
-            for gname, cut, mc, r, verdict, arm in summary:
-                mc_s = f"{mc:.0f}" if mc is not None else "-"
+            print(f"  {'graph':24s} {'ours':>7} {'METIS':>7} {'eco':>7} {'strong':>7} {'Scotch':>7} {'r':>7}  verdict")
+            print(f"  {'-' * 24} {'-' * 7} {'-' * 7} {'-' * 7} {'-' * 7} {'-' * 7} {'-' * 7}  {'-' * 7}")
+            for gname, cut, mc, comps, r, verdict in summary:
+                cuts_all = [cut] + [v for v in [mc, comps.get("eco"), comps.get("strong"),
+                                                comps.get("Scotch")] if v is not None]
+                lo = min(cuts_all)
+                def cell(v):
+                    if v is None:
+                        return f"{'-':>7}"
+                    mark = "*" if v <= lo else " "
+                    return f"{v:>6.0f}{mark}"
                 r_s = f"{r:.3f}" if r is not None else "-"
-                print(f"  {gname:24s} {cut:>7.0f} {mc_s:>7} {r_s:>7}  {verdict}")
+                print(f"  {gname:24s} {cell(cut)} {cell(mc)} {cell(comps.get('eco'))} "
+                      f"{cell(comps.get('strong'))} {cell(comps.get('Scotch'))} {r_s:>7}  {verdict}")
+            print("  * lowest cut in the row. r and the verdict are against trials-matched")
+            print("    METIS, the thesis baseline; KaHIP eco, KaHIP strong and Scotch run")
+            print("    once each at their own presets, as in the Appendix G gallery.")
         print()
         print("  This section demonstrates the machinery on one fixed seed; the")
         print("  benchmark claims are the 67-graph, 3-seed tables of Chapter 5.")
