@@ -349,27 +349,30 @@ def main():
             if any(v is not None for v in comps.values()):
                 shown = "  ·  ".join(f"KaHIP {kk} {v:.0f}" if kk != "Scotch" else f"Scotch {v:.0f}"
                                      for kk, v in comps.items() if v is not None)
-                print(f"  comparators     {shown}   (one run each, own presets)")
+                print(f"  reference       {shown}   (one run each, own presets, not budget-matched)")
             summary.append((gname, cut, mc, comps, r, verdict))
         if len(summary) > 1:
             print()
-            print(f"  {'graph':24s} {'ours':>7} {'METIS':>7} {'eco':>7} {'strong':>7} {'Scotch':>7} {'r':>7}  verdict")
-            print(f"  {'-' * 24} {'-' * 7} {'-' * 7} {'-' * 7} {'-' * 7} {'-' * 7} {'-' * 7}  {'-' * 7}")
+            print(f"  {'':24s} {'budget-matched comparison':^31} | {'reference (own presets)':^23}")
+            print(f"  {'graph':24s} {'ours':>7} {'METIS':>7} {'r':>7} {'verdict':>7} | {'eco':>7} {'strong':>7} {'Scotch':>7}")
+            print(f"  {'-' * 24} {'-' * 7} {'-' * 7} {'-' * 7} {'-' * 7} + {'-' * 7} {'-' * 7} {'-' * 7}")
             for gname, cut, mc, comps, r, verdict in summary:
-                cuts_all = [cut] + [v for v in [mc, comps.get("eco"), comps.get("strong"),
-                                                comps.get("Scotch")] if v is not None]
-                lo = min(cuts_all)
-                def cell(v):
+                pair = [v for v in (cut, mc) if v is not None]
+                lo = min(pair)
+                def cell(v, starred=True):
                     if v is None:
                         return f"{'-':>7}"
-                    mark = "*" if v <= lo else " "
+                    mark = "*" if (starred and v <= lo) else " "
                     return f"{v:>6.0f}{mark}"
                 r_s = f"{r:.3f}" if r is not None else "-"
-                print(f"  {gname:24s} {cell(cut)} {cell(mc)} {cell(comps.get('eco'))} "
-                      f"{cell(comps.get('strong'))} {cell(comps.get('Scotch'))} {r_s:>7}  {verdict}")
-            print("  * lowest cut in the row. r and the verdict are against trials-matched")
-            print("    METIS, the thesis baseline; KaHIP eco, KaHIP strong and Scotch run")
-            print("    once each at their own presets, as in the Appendix G gallery.")
+                print(f"  {gname:24s} {cell(cut)} {cell(mc)} {r_s:>7} {verdict:>7} | "
+                      f"{cell(comps.get('eco'), False)} {cell(comps.get('strong'), False)} "
+                      f"{cell(comps.get('Scotch'), False)}")
+            print("  * lower of the budget-matched pair: the method against trials-matched")
+            print("    METIS (same number of trials, same seed), which is the comparison the")
+            print("    thesis makes. The reference solvers run once at their own presets and")
+            print("    are not budget-matched; the full-protocol comparison against them is")
+            print("    the Appendix G gallery.")
         print()
         print("  This section demonstrates the machinery on one fixed seed; the")
         print("  benchmark claims are the 67-graph, 3-seed tables of Chapter 5.")
