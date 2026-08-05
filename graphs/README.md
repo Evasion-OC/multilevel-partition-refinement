@@ -1,11 +1,17 @@
 # Demo graphs
 
-Two benchmark graphs from the SuiteSparse collection, converted to METIS
-graph format and shipped so that `src/demo.py` can partition real benchmark
-graphs end to end without any external data. Both are headline wins of
-Chapter 5:
+Six benchmark graphs shipped so that `src/demo.py` can run a benchmark in
+miniature end to end without any external data: two headline wins, a mesh
+win near parity, a tie, and two known parity-regime losses, in that order.
 
-- `rdb3200l.graph`: reaction-diffusion matrix (Bai group), n = 3,200.
-  About 15 s at the demo budget.
-- `conf5_0-4x4-14.graph`: lattice QCD configuration, n = 3,072.
-  About 95 s at the demo budget; runs under `--wins`.
+From the SuiteSparse collection (converted to METIS graph format):
+
+- `rdb3200l.graph`: reaction-diffusion matrix, n = 3,200. Headline win.
+- `conf5_0-4x4-14.graph`: lattice QCD configuration, n = 3,072. Headline win.
+- `power.graph`: Western US power grid, n = 4,941.
+
+From the Walshaw graph partitioning archive:
+
+- `data.graph`: 3D FEM mesh, n = 2,851.
+- `uk.graph`: near-planar mesh of Great Britain, n = 4,824.
+- `3elt.graph`: 2D FEM airfoil mesh, n = 4,720.

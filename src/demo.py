@@ -20,7 +20,7 @@ Everything below imports the real repository modules. Nothing is reimplemented
 for the demo, which is the point: a marker can follow any number here back into
 the code that produced the thesis.
 
-    python src/demo.py                # the whole demonstration, ~2 min
+    python src/demo.py                # the whole demonstration, ~4 min
 """
 from __future__ import annotations
 
@@ -86,15 +86,15 @@ def find_checkpoint():
 
 
 def find_graphs():
-    """The shipped benchmark graphs for the end-to-end section. Both are
-    headline wins of Chapter 5: rdb3200l (reaction-diffusion, ~15 s live)
-    and conf5_0-4x4-14 (lattice QCD, ~95 s live)."""
+    """The shipped benchmark graphs: a benchmark in miniature, in this order.
+    Two headline wins (rdb3200l, conf5_0-4x4-14), a mesh win near parity
+    (data), a tie (power), and two known parity-regime losses (uk, 3elt),
+    which is the separator-ceiling regime of Chapter 5 reproduced live."""
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    names = ["rdb3200l.graph", "conf5_0-4x4-14.graph"]
-    out = [p for p in (os.path.join(here, "graphs", n) for n in names)
-           if os.path.exists(p)]
-    return out or [p for p in [os.path.expanduser("~/Downloads/graphs/data.graph")]
-                   if os.path.exists(p)]
+    names = ["rdb3200l.graph", "conf5_0-4x4-14.graph", "data.graph",
+             "power.graph", "uk.graph", "3elt.graph"]
+    return [p for p in (os.path.join(here, "graphs", n) for n in names)
+            if os.path.exists(p)]
 
 
 def main():
