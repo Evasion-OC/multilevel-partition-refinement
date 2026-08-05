@@ -20,11 +20,7 @@ Everything below imports the real repository modules. Nothing is reimplemented
 for the demo, which is the point: a marker can follow any number here back into
 the code that produced the thesis.
 
-    python src/demo.py                # ~40 s including the live partition
-    python src/demo.py --wins         # both shipped headline wins, ~2 min
-    python src/demo.py --graph a.graph b.graph   # any METIS graphs
-    python src/demo.py --quick        # ~30 s, smaller invariance/timing sizes
-    python src/demo.py --no-benchmark # sections 1 to 3 only, ~10 s
+    python src/demo.py                # the whole demonstration, ~2 min
 """
 from __future__ import annotations
 
@@ -89,12 +85,12 @@ def find_checkpoint():
     return (k4 or hits or [""])[0]
 
 
-def find_graphs(wins=False):
+def find_graphs():
     """The shipped benchmark graphs for the end-to-end section. Both are
-    headline wins of Chapter 5: rdb3200l (reaction-diffusion, ~15 s live) and,
-    with --wins, also conf5_0-4x4-14 (lattice QCD, ~95 s live, r = 0.800)."""
+    headline wins of Chapter 5: rdb3200l (reaction-diffusion, ~15 s live)
+    and conf5_0-4x4-14 (lattice QCD, ~95 s live)."""
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    names = ["rdb3200l.graph"] + (["conf5_0-4x4-14.graph"] if wins else [])
+    names = ["rdb3200l.graph", "conf5_0-4x4-14.graph"]
     out = [p for p in (os.path.join(here, "graphs", n) for n in names)
            if os.path.exists(p)]
     return out or [p for p in [os.path.expanduser("~/Downloads/graphs/data.graph")]
@@ -107,17 +103,15 @@ def main():
                     help="trained checkpoint; defaults to models/spectral_refiner_k4_*.pt")
     ap.add_argument("--graph", nargs="+", default=None,
                     help="METIS-format graph(s) for the end-to-end section; "
-                         "defaults to the shipped rdb3200l")
-    ap.add_argument("--wins", action="store_true",
-                    help="run both shipped headline wins (adds conf5_0-4x4-14, ~95 s)")
+                         "defaults to the two shipped headline wins")
     ap.add_argument("--quick", action="store_true")
     ap.add_argument("--no-benchmark", action="store_true",
-                    help="skip section 4 (the live end-to-end partition)")
+                    help="skip section 4 (the live end-to-end partitions)")
     a = ap.parse_args()
     if a.model is None:
         a.model = find_checkpoint()
     if a.graph is None:
-        a.graph = find_graphs(wins=a.wins)
+        a.graph = find_graphs()
     torch.manual_seed(0)
 
     # ---------------- (1) the deployed checkpoint, strictly reloaded ----------------
