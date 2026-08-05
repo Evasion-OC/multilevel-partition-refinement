@@ -1,23 +1,28 @@
 #!/usr/bin/env python3
-"""Live demo: the three claims that can be shown in under two minutes.
+"""Live demo: the four claims that can be shown in a couple of minutes.
 
-The benchmark itself is an HPC artefact and cannot be reproduced live (roughly
-four minutes per graph per seed on a laptop). What CAN be shown live is the
-part that is a property of the code rather than of the compute budget:
+The full benchmark is an HPC artefact and cannot be reproduced live (roughly
+four minutes per graph per seed on a laptop, times 67 graphs, times 3 seeds).
+What CAN be shown live:
 
-  (1) the deployed checkpoint loads and reports its own parameter count;
-  (2) the encoder's three invariances hold end to end, to ~1e-6, measured now
-      rather than quoted -- permutation of the vertices, sign flip of the
-      eigenvectors, and rotation inside a degenerate eigenspace;
+  (1) the deployed checkpoint reloads through the real architecture, strictly,
+      and reports its own configuration;
+  (2) the encoder's three invariances hold end to end on the DEPLOYED weights,
+      measured now rather than quoted -- permutation of the vertices, sign flip
+      of the eigenvectors, rotation inside a degenerate eigenspace;
   (3) the global branch is linear where dense attention is quadratic, on the
-      same encoder object the pipeline uses.
+      same encoder object the pipeline uses;
+  (4) the pipeline runs end to end on a real archive graph: the refiner engages
+      at every gated level, the guard returns its verdict, and the cut is
+      compared with METIS at the same (reduced) trial budget.
 
 Everything below imports the real repository modules. Nothing is reimplemented
 for the demo, which is the point: a marker can follow any number here back into
 the code that produced the thesis.
 
-    python src/demo.py                # ~90 s
-    python src/demo.py --quick        # ~35 s, smaller n
+    python src/demo.py                # ~40 s including the live partition
+    python src/demo.py --quick        # ~30 s, smaller invariance/timing sizes
+    python src/demo.py --no-benchmark # sections 1 to 3 only, ~10 s
 """
 from __future__ import annotations
 
@@ -33,12 +38,23 @@ import torch
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from srmp.graph import Graph                                  # noqa: E402
+from srmp.graph import Graph, read_metis                      # noqa: E402
 from srmp.spectral import compute_eigenvectors                # noqa: E402
+from srmp.evaluation import compute_edge_cut, compute_imbalance  # noqa: E402
 from graph_transformer import SpectralGraphTransformer        # noqa: E402
-from refiner import build_state                              # noqa: E402
+from refiner import build_state, load_spectral_actor_critic   # noqa: E402
+from multilevel_partitioner import make_multilevel_partitioner  # noqa: E402
 
 RULE = "=" * 66
+
+# The live end-to-end run uses a REDUCED budget so it finishes in ~30 s:
+# best-of-4 coarsest starts, a single V-cycle, no evolutionary stage, one
+# fixed seed -- and METIS gets the SAME reduced budget (ncuts = 4, same
+# seed). The thesis numbers use best-of-12, the evolutionary stage and three
+# seeds per graph (Chapter 5); this section demonstrates the machinery, and
+# the benchmark chapter carries the claims.
+LIVE_BOK = 4
+LIVE_SEED = 1
 
 
 def rand_graph(n, deg=6, seed=0):
@@ -71,49 +87,72 @@ def find_checkpoint():
     return (k4 or hits or [""])[0]
 
 
+def find_graph():
+    """A small real archive graph for the end-to-end section."""
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for cand in (os.path.join(here, "graphs", "data.graph"),
+                 os.path.expanduser("~/Downloads/graphs/data.graph")):
+        if os.path.exists(cand):
+            return cand
+    return ""
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default=None,
-                    help="trained checkpoint; defaults to the first .pt in ~/Downloads/Models")
+                    help="trained checkpoint; defaults to models/spectral_refiner_k4_*.pt")
+    ap.add_argument("--graph", default=None,
+                    help="METIS-format graph for the end-to-end section; defaults to data.graph")
     ap.add_argument("--quick", action="store_true")
+    ap.add_argument("--no-benchmark", action="store_true",
+                    help="skip section 4 (the live end-to-end partition)")
     a = ap.parse_args()
     if a.model is None:
         a.model = find_checkpoint()
-    k, n_eigs = 4, 8
+    if a.graph is None:
+        a.graph = find_graph()
     torch.manual_seed(0)
 
-    # ---------------- (1) the deployed checkpoint ----------------
+    # ---------------- (1) the deployed checkpoint, strictly reloaded ----------------
     print(RULE)
-    print(" (1) THE DEPLOYED CHECKPOINT")
+    print(" (1) THE DEPLOYED CHECKPOINT, RELOADED THROUGH THE ARCHITECTURE")
     print(RULE)
+    policy = None
+    k, n_eigs = 4, 8
     if os.path.exists(a.model):
-        ck = torch.load(a.model, map_location="cpu", weights_only=False)
-        sd = ck.get("model_state", ck.get("policy", ck))
-        n_par = sum(v.numel() for v in sd.values() if hasattr(v, "numel"))
+        policy, ck = load_spectral_actor_critic(a.model)
+        k, n_eigs = int(ck["k"]), int(ck.get("n_eigs", 8))
+        n_par = sum(p.numel() for p in policy.parameters())
         print(f"  file            {os.path.basename(a.model)}")
-        print(f"  parameters      {n_par:,}")
+        print(f"  parameters      {n_par:,}   (instantiated model, strict load)")
         for key in ("k", "epsilon", "global_kind", "pe_kind", "d_model"):
-            if isinstance(ck, dict) and key in ck:
+            if key in ck:
                 print(f"  {key:15s} {ck[key]}")
-        print("  -> the deployed checkpoint, self-reporting the configuration it was\n"
-              "     trained under; k=4 is the one Chapter 5 reports.")
+        print("  -> the checkpoint stores its own constructor arguments, and the")
+        print("     load is strict: a mismatch with the architecture would fail")
+        print("     rather than load silently. k=4 is the Chapter 5 configuration.")
     else:
-        print(f"  (checkpoint not found at {a.model}; skipping)")
+        print(f"  (checkpoint not found at {a.model!r}; sections 2 and 3 use a")
+        print("   fresh encoder, and section 4 is skipped)")
 
-    # ---------------- (2) the invariances, measured live ----------------
+    # ---------------- (2) the invariances, measured on the deployed weights ----------------
     print()
     print(RULE)
     print(" (2) THE THREE INVARIANCES, MEASURED NOW (not quoted)")
     print(RULE)
     n = 300 if a.quick else 600
     G = rand_graph(n, seed=3)
-    ev, V = compute_eigenvectors(G, num_eigenvectors=n_eigs, normalized=True)
     pi = np.zeros(G.n, dtype=np.int64)
     x, ev_t, V_t, _, ai, aw, di = build_state(G, pi, k, n_eigs=n_eigs)
 
-    enc = SpectralGraphTransformer(in_dim=x.shape[1], d_model=64, n_heads=4,
-                                   n_layers=2, use_local=True,
-                                   global_kind="lanczos").eval()
+    if policy is not None:
+        enc = policy.encoder.eval()
+        src = "the DEPLOYED trained encoder"
+    else:
+        enc = SpectralGraphTransformer(in_dim=x.shape[1], d_model=64, n_heads=4,
+                                       n_layers=2, use_local=True,
+                                       global_kind="lanczos").eval()
+        src = "a fresh encoder (no checkpoint found)"
     with torch.no_grad():
         H0 = enc(x, ev_t, V_t, ai, aw, di)
 
@@ -157,6 +196,7 @@ def main():
         inv = np.argsort(perm)
         d_perm = (H0 - Hp[torch.as_tensor(inv)]).abs().max().item()
 
+    print(f"  measured on {src}")
     print(f"  sign / permutation on a random graph: n = {G.n}, m = {G.adj.nnz // 2}")
     print(f"  basis rotation on the cycle C_{n}, whose eigenvalues are exactly")
     print(f"  doubled: the rotated pair has eigenvalue gap {gap:.2e}")
@@ -208,9 +248,54 @@ def main():
     print("  The gap widens with n. Appendix I carries the same measurement to")
     print("  n = 50,000, where dense attention runs out of memory and Lanczos")
     print("  completes -- which is what makes a refiner at EVERY level feasible.")
+
+    # ---------------- (4) the pipeline end to end, on a real graph ----------------
+    if not a.no_benchmark and policy is not None and a.graph and os.path.exists(a.graph):
+        print()
+        print(RULE)
+        print(" (4) END TO END, LIVE: PARTITION A REAL ARCHIVE GRAPH")
+        print(RULE)
+        Gr = read_metis(a.graph)
+        gname = os.path.basename(a.graph)
+        print(f"  graph           {gname}   n = {Gr.n:,}   m = {Gr.adj.nnz // 2:,}")
+        print(f"  live budget     best-of-{LIVE_BOK} starts, one V-cycle, seed {LIVE_SEED}")
+        print(f"                  (the thesis protocol is best-of-12, evolutionary")
+        print(f"                   search on, three seeds; Chapter 5 carries those claims)")
+        Pm = make_multilevel_partitioner(policy, k=k, epsilon=0.03, best_of_k=LIVE_BOK,
+                                         num_cycles=1, evolutionary=False,
+                                         ml_refine_max_n=4000, global_no_harm=True)
+        t0 = time.time()
+        part = Pm.partition(Gr, seed=LIVE_SEED)
+        t_ml = time.time() - t0
+        cut = compute_edge_cut(Gr, part)
+        imb = compute_imbalance(Gr, part, k)
+        arm = "multi-level" if Pm.ml_global_adopted else "FM-only"
+        print(f"  pipeline        {t_ml:5.1f} s: refiner engaged at "
+              f"{Pm.ml_refine_tries} gated levels, kept at {Pm.ml_refine_calls}")
+        print(f"  guard verdict   both arms ran; the {arm} arm had the lower final cut")
+        print(f"  result          cut = {cut:.0f}   imbalance = {imb:+.4f}  (eps = 0.03)")
+        try:
+            from benchmark import run_metis
+            m = run_metis(Gr, k, ncuts=LIVE_BOK, seeds=(LIVE_SEED,))
+            r = cut / m["cut"]
+            print(f"  METIS           cut = {m['cut']:.0f}  at the same budget "
+                  f"(ncuts = {LIVE_BOK}, seed {LIVE_SEED})")
+            print(f"  ratio           r = {r:.3f}  at the live budget "
+                  f"({'win' if r < 0.995 else 'tie' if r <= 1.005 else 'loss'})")
+        except Exception as e:                        # pymetis absent: still a full run
+            print(f"  (METIS comparison unavailable: {e})")
+        print("  This section demonstrates the machinery on one fixed seed; the")
+        print("  benchmark claims are the 67-graph, 3-seed tables of Chapter 5.")
+    elif not a.no_benchmark:
+        print()
+        print(RULE)
+        print(" (4) END TO END, LIVE: skipped "
+              + ("(no checkpoint)" if policy is None else f"(graph not found at {a.graph!r})"))
+        print(RULE)
+
     print()
     print(RULE)
-    print(" The benchmark itself (67 graphs x 3 seeds x trials-matched METIS) is")
+    print(" The full benchmark (67 graphs x 3 seeds x trials-matched METIS) is")
     print(" an HPC artefact: roughly 4 minutes per graph per seed on a laptop.")
     print(" Its records are in runs/*.jsonl and bench_data/*.tsv, and every figure")
     print(" script re-derives its numbers from them and asserts them before drawing.")
