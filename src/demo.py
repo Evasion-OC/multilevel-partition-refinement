@@ -15,7 +15,8 @@ What CAN be shown live:
   (4) the pipeline runs end to end on six real archive graphs: the refiner
       engages at every gated level, the guard returns its verdict, and the cut
       is compared with METIS at the same (reduced) trial budget, and with
-      KaHIP eco, KaHIP strong and Scotch at their own presets.
+      KaHIP eco, KaHIP strong and Scotch at their own presets. Everything
+      printed is computed in this run; nothing is quoted from stored results.
 
 Everything below imports the real repository modules. Nothing is reimplemented
 for the demo, which is the point: a marker can follow any number here back into
@@ -362,14 +363,6 @@ def main():
             print("  * lowest cut in the row. r and the verdict are against trials-matched")
             print("    METIS, the thesis baseline; KaHIP eco, KaHIP strong and Scotch run")
             print("    once each at their own presets, as in the Appendix G gallery.")
-            print()
-            print("  Under the FULL protocol (Appendix G record, best of three seeds,")
-            print("  all six solvers), the proposed cut is the lowest in every row,")
-            print("  KaHIP strong included, on:")
-            print("    add20          1183 vs 1184  ·  1736 vs 1761  ·  2159 vs 2224   (k = 4, 8, 16)")
-            print("    PGPgiantcompo   646 vs  652  ·   994 vs  999  ·  1520 vs 1524   (k = 4, 8, 16)")
-            print("  Those runs cost minutes per seed per solver, so they are quoted from")
-            print("  the record rather than rerun; the gallery scripts regenerate them.")
         print()
         print("  This section demonstrates the machinery on one fixed seed; the")
         print("  benchmark claims are the 67-graph, 3-seed tables of Chapter 5.")
