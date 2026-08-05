@@ -88,9 +88,10 @@ def find_checkpoint():
 
 
 def find_graph():
-    """A small real archive graph for the end-to-end section."""
+    """The shipped benchmark graph for the end-to-end section: rdb3200l, a
+    reaction-diffusion matrix and one of the headline wins of Chapter 5."""
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    for cand in (os.path.join(here, "graphs", "data.graph"),
+    for cand in (os.path.join(here, "graphs", "rdb3200l.graph"),
                  os.path.expanduser("~/Downloads/graphs/data.graph")):
         if os.path.exists(cand):
             return cand
