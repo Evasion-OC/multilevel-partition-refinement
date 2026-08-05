@@ -13,7 +13,8 @@ What CAN be shown live:
   (3) the global branch is linear where dense attention is quadratic, on the
       same encoder object the pipeline uses;
   (4) the pipeline runs end to end on six real archive graphs: the refiner
-      engages at every gated level, the guard returns its verdict, and the cut
+      engages at every gated level, the guard returns its verdict, the block
+      sizes are printed with their sum checked against n, and the cut
       is compared with METIS at the same (reduced) trial budget, and with
       KaHIP eco, KaHIP strong and Scotch at their own presets. Everything
       printed is computed in this run; nothing is quoted from stored results.
@@ -132,11 +133,12 @@ def find_checkpoint():
 def find_graphs():
     """The shipped benchmark graphs: a benchmark in miniature, in this order.
     Two headline wins (rdb3200l, conf5_0-4x4-14), a mesh win near parity
-    (data), a tie (power), and two known parity-regime losses (uk, 3elt),
-    which is the separator-ceiling regime of Chapter 5 reproduced live."""
+    (data), a tie (power), two known parity-regime losses (uk, 3elt), and
+    add20, the archive's circuit graph, whose deep hierarchy makes it the
+    slowest of the seven by far (several minutes on a laptop)."""
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     names = ["rdb3200l.graph", "conf5_0-4x4-14.graph", "data.graph",
-             "power.graph", "uk.graph", "3elt.graph"]
+             "power.graph", "uk.graph", "3elt.graph", "add20.graph"]
     return [p for p in (os.path.join(here, "graphs", n) for n in names)
             if os.path.exists(p)]
 
@@ -323,6 +325,11 @@ def main():
                   f"{Pm.ml_refine_tries} gated levels, kept at {Pm.ml_refine_calls}")
             print(f"  guard verdict   both arms ran; the {arm} arm had the lower final cut")
             print(f"  result          cut = {cut:.0f}   imbalance = {imb:+.4f}  (eps = 0.03)")
+            sizes = np.bincount(np.asarray(part, dtype=int), minlength=k)
+            ok = (len(sizes) == k and int(sizes.sum()) == Gr.n
+                  and int(np.asarray(part).min()) >= 0)
+            print(f"  blocks          sizes {[int(s) for s in sizes[:k]]}   "
+                  f"sum = {int(sizes.sum()):,} = n ({'valid partition' if ok else 'INVALID'})")
             try:
                 from benchmark import run_metis
                 m = run_metis(Gr, k, ncuts=LIVE_BOK, seeds=(LIVE_SEED,))

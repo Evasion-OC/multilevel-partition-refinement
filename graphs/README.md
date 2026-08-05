@@ -15,3 +15,5 @@ From the Walshaw graph partitioning archive:
 - `data.graph`: 3D FEM mesh, n = 2,851.
 - `uk.graph`: near-planar mesh of Great Britain, n = 4,824.
 - `3elt.graph`: 2D FEM airfoil mesh, n = 4,720.
+- `add20.graph`: 20-bit adder circuit, n = 2,395. The slowest of the seven
+  (a matching stall in coarsening makes the hierarchy deep), several minutes.
