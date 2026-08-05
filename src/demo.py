@@ -21,6 +21,8 @@ for the demo, which is the point: a marker can follow any number here back into
 the code that produced the thesis.
 
     python src/demo.py                # ~40 s including the live partition
+    python src/demo.py --wins         # both shipped headline wins, ~2 min
+    python src/demo.py --graph a.graph b.graph   # any METIS graphs
     python src/demo.py --quick        # ~30 s, smaller invariance/timing sizes
     python src/demo.py --no-benchmark # sections 1 to 3 only, ~10 s
 """
@@ -87,23 +89,27 @@ def find_checkpoint():
     return (k4 or hits or [""])[0]
 
 
-def find_graph():
-    """The shipped benchmark graph for the end-to-end section: rdb3200l, a
-    reaction-diffusion matrix and one of the headline wins of Chapter 5."""
+def find_graphs(wins=False):
+    """The shipped benchmark graphs for the end-to-end section. Both are
+    headline wins of Chapter 5: rdb3200l (reaction-diffusion, ~15 s live) and,
+    with --wins, also conf5_0-4x4-14 (lattice QCD, ~95 s live, r = 0.800)."""
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    for cand in (os.path.join(here, "graphs", "rdb3200l.graph"),
-                 os.path.expanduser("~/Downloads/graphs/data.graph")):
-        if os.path.exists(cand):
-            return cand
-    return ""
+    names = ["rdb3200l.graph"] + (["conf5_0-4x4-14.graph"] if wins else [])
+    out = [p for p in (os.path.join(here, "graphs", n) for n in names)
+           if os.path.exists(p)]
+    return out or [p for p in [os.path.expanduser("~/Downloads/graphs/data.graph")]
+                   if os.path.exists(p)]
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default=None,
                     help="trained checkpoint; defaults to models/spectral_refiner_k4_*.pt")
-    ap.add_argument("--graph", default=None,
-                    help="METIS-format graph for the end-to-end section; defaults to data.graph")
+    ap.add_argument("--graph", nargs="+", default=None,
+                    help="METIS-format graph(s) for the end-to-end section; "
+                         "defaults to the shipped rdb3200l")
+    ap.add_argument("--wins", action="store_true",
+                    help="run both shipped headline wins (adds conf5_0-4x4-14, ~95 s)")
     ap.add_argument("--quick", action="store_true")
     ap.add_argument("--no-benchmark", action="store_true",
                     help="skip section 4 (the live end-to-end partition)")
@@ -111,7 +117,7 @@ def main():
     if a.model is None:
         a.model = find_checkpoint()
     if a.graph is None:
-        a.graph = find_graph()
+        a.graph = find_graphs(wins=a.wins)
     torch.manual_seed(0)
 
     # ---------------- (1) the deployed checkpoint, strictly reloaded ----------------
@@ -250,48 +256,63 @@ def main():
     print("  n = 50,000, where dense attention runs out of memory and Lanczos")
     print("  completes -- which is what makes a refiner at EVERY level feasible.")
 
-    # ---------------- (4) the pipeline end to end, on a real graph ----------------
-    if not a.no_benchmark and policy is not None and a.graph and os.path.exists(a.graph):
+    # ---------------- (4) the pipeline end to end, on real graphs ----------------
+    graphs = [g for g in (a.graph or []) if os.path.exists(g)]
+    if not a.no_benchmark and policy is not None and graphs:
         print()
         print(RULE)
-        print(" (4) END TO END, LIVE: PARTITION A REAL ARCHIVE GRAPH")
+        print(" (4) END TO END, LIVE: PARTITION REAL ARCHIVE GRAPHS")
         print(RULE)
-        Gr = read_metis(a.graph)
-        gname = os.path.basename(a.graph)
-        print(f"  graph           {gname}   n = {Gr.n:,}   m = {Gr.adj.nnz // 2:,}")
         print(f"  live budget     best-of-{LIVE_BOK} starts, one V-cycle, seed {LIVE_SEED}")
         print(f"                  (the thesis protocol is best-of-12, evolutionary")
         print(f"                   search on, three seeds; Chapter 5 carries those claims)")
-        Pm = make_multilevel_partitioner(policy, k=k, epsilon=0.03, best_of_k=LIVE_BOK,
-                                         num_cycles=1, evolutionary=False,
-                                         ml_refine_max_n=4000, global_no_harm=True)
-        t0 = time.time()
-        part = Pm.partition(Gr, seed=LIVE_SEED)
-        t_ml = time.time() - t0
-        cut = compute_edge_cut(Gr, part)
-        imb = compute_imbalance(Gr, part, k)
-        arm = "multi-level" if Pm.ml_global_adopted else "FM-only"
-        print(f"  pipeline        {t_ml:5.1f} s: refiner engaged at "
-              f"{Pm.ml_refine_tries} gated levels, kept at {Pm.ml_refine_calls}")
-        print(f"  guard verdict   both arms ran; the {arm} arm had the lower final cut")
-        print(f"  result          cut = {cut:.0f}   imbalance = {imb:+.4f}  (eps = 0.03)")
-        try:
-            from benchmark import run_metis
-            m = run_metis(Gr, k, ncuts=LIVE_BOK, seeds=(LIVE_SEED,))
-            r = cut / m["cut"]
-            print(f"  METIS           cut = {m['cut']:.0f}  at the same budget "
-                  f"(ncuts = {LIVE_BOK}, seed {LIVE_SEED})")
-            print(f"  ratio           r = {r:.3f}  at the live budget "
-                  f"({'win' if r < 0.995 else 'tie' if r <= 1.005 else 'loss'})")
-        except Exception as e:                        # pymetis absent: still a full run
-            print(f"  (METIS comparison unavailable: {e})")
+        summary = []
+        for gpath in graphs:
+            Gr = read_metis(gpath)
+            gname = os.path.basename(gpath)
+            print()
+            print(f"  graph           {gname}   n = {Gr.n:,}   m = {Gr.adj.nnz // 2:,}")
+            Pm = make_multilevel_partitioner(policy, k=k, epsilon=0.03, best_of_k=LIVE_BOK,
+                                             num_cycles=1, evolutionary=False,
+                                             ml_refine_max_n=4000, global_no_harm=True)
+            t0 = time.time()
+            part = Pm.partition(Gr, seed=LIVE_SEED)
+            t_ml = time.time() - t0
+            cut = compute_edge_cut(Gr, part)
+            imb = compute_imbalance(Gr, part, k)
+            arm = "multi-level" if Pm.ml_global_adopted else "FM-only"
+            print(f"  pipeline        {t_ml:5.1f} s: refiner engaged at "
+                  f"{Pm.ml_refine_tries} gated levels, kept at {Pm.ml_refine_calls}")
+            print(f"  guard verdict   both arms ran; the {arm} arm had the lower final cut")
+            print(f"  result          cut = {cut:.0f}   imbalance = {imb:+.4f}  (eps = 0.03)")
+            try:
+                from benchmark import run_metis
+                m = run_metis(Gr, k, ncuts=LIVE_BOK, seeds=(LIVE_SEED,))
+                r = cut / m["cut"]
+                verdict = "win" if r < 0.995 else "tie" if r <= 1.005 else "loss"
+                print(f"  METIS           cut = {m['cut']:.0f}  at the same budget "
+                      f"(ncuts = {LIVE_BOK}, seed {LIVE_SEED})")
+                print(f"  ratio           r = {r:.3f}  at the live budget ({verdict})")
+                summary.append((gname, cut, m["cut"], r, verdict, arm))
+            except Exception as e:                    # pymetis absent: still a full run
+                print(f"  (METIS comparison unavailable: {e})")
+                summary.append((gname, cut, None, None, "n/a", arm))
+        if len(summary) > 1:
+            print()
+            print(f"  {'graph':24s} {'ours':>7} {'METIS':>7} {'r':>7}  verdict")
+            print(f"  {'-' * 24} {'-' * 7} {'-' * 7} {'-' * 7}  {'-' * 7}")
+            for gname, cut, mc, r, verdict, arm in summary:
+                mc_s = f"{mc:.0f}" if mc is not None else "-"
+                r_s = f"{r:.3f}" if r is not None else "-"
+                print(f"  {gname:24s} {cut:>7.0f} {mc_s:>7} {r_s:>7}  {verdict}")
+        print()
         print("  This section demonstrates the machinery on one fixed seed; the")
         print("  benchmark claims are the 67-graph, 3-seed tables of Chapter 5.")
     elif not a.no_benchmark:
         print()
         print(RULE)
         print(" (4) END TO END, LIVE: skipped "
-              + ("(no checkpoint)" if policy is None else f"(graph not found at {a.graph!r})"))
+              + ("(no checkpoint)" if policy is None else "(no graph found)"))
         print(RULE)
 
     print()
