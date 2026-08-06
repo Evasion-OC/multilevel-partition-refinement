@@ -1,4 +1,4 @@
-# Expressive Power and Invariance of Spectral Transformers for Multilevel Partition Refinement
+# Spectral Graph Transformers for Multilevel Partition Refinement: Expressivity, Invariance, and Linear-Time Encoding
 
 Code for the MSc dissertation of that title, University of Greenwich, 2026.
 
@@ -61,7 +61,10 @@ of every ratio work under the same budget.
 |---|---|---|
 | seed median, equal trial budget | 45 of 67 | 0.979 |
 | best of three seeds | 50 of 67 | 0.964 |
-| scale study, n up to 144,649 | 18 wins, 3 ties, 2 losses | 0.957 over 23 cells |
+
+A scale study on the Walshaw large tier (62k to 156k vertices) is still running
+and sits outside the dissertation's established results; its numbers will land
+here once the runs complete.
 
 ## What the evidence does not support
 
