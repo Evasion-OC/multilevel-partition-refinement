@@ -1,4 +1,4 @@
-# Spectral Graph Transformers for Multilevel Partition Refinement: Expressivity, Invariance, and Linear-Time Encoding
+# Expressive Power and Invariance of Spectral Transformers for Multilevel Partition Refinement
 
 Code for the MSc dissertation of that title, University of Greenwich, 2026.
 
