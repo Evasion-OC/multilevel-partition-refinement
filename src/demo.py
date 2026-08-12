@@ -23,7 +23,7 @@ Everything below imports the real repository modules. Nothing is reimplemented
 for the demo, which is the point: a marker can follow any number here back into
 the code that produced the thesis.
 
-    python src/demo.py                # the whole demonstration, ~4 min
+    python src/demo.py                # the whole demonstration, ~3.5 min
 """
 from __future__ import annotations
 
@@ -133,12 +133,13 @@ def find_checkpoint():
 def find_graphs():
     """The shipped benchmark graphs: a benchmark in miniature, in this order.
     Two headline wins (rdb3200l, conf5_0-4x4-14), a mesh win near parity
-    (data), a tie (power), two known parity-regime losses (uk, 3elt), and
-    add20, the archive's circuit graph, whose deep hierarchy makes it the
-    slowest of the seven by far (several minutes on a laptop)."""
+    (data), a tie (power), and two known parity-regime losses (uk, 3elt).
+    add20 also ships but is excluded from the default roster: its deep
+    hierarchy costs several minutes alone, past the viva's 10-minute
+    format; run it with --graph graphs/add20.graph."""
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     names = ["rdb3200l.graph", "conf5_0-4x4-14.graph", "data.graph",
-             "power.graph", "uk.graph", "3elt.graph", "add20.graph"]
+             "power.graph", "uk.graph", "3elt.graph"]
     return [p for p in (os.path.join(here, "graphs", n) for n in names)
             if os.path.exists(p)]
 
