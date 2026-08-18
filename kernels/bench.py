@@ -75,7 +75,9 @@ def main():
         w = csv.DictWriter(f, fieldnames=rows[0].keys()); w.writeheader(); w.writerows(rows)
     meta = {"device": torch.cuda.get_device_name(0), "torch": torch.__version__,
             "triton": HAS_TRITON, "dtype": args.dtype, "d": D, "c": C, "m": M,
-            "warmup": WARMUP, "iters": ITERS}
+            "warmup": WARMUP, "iters": ITERS,
+            "tf32_matmul": torch.backends.cuda.matmul.allow_tf32,
+            "tf32_cudnn": torch.backends.cudnn.allow_tf32}
     with open(args.out.replace(".csv", "_meta.json"), "w") as f:
         json.dump(meta, f, indent=2)
     print("wrote", args.out)
