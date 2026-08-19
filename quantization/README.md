@@ -60,10 +60,18 @@ the invariances are architectural), and now there is a number saying so.
 - `report.py`     - per-layer tables for a checkpoint (CSV in results/)
 - `ablate.py`     - whole-model + per-layer drift, invariance checks (CSV)
 
+## Cross-checkpoint results (k4/k8/k16/k32, A100 run 19 Aug 2026)
+
+Whole-model int4 per-tensor drift: k4 16.0%, k8 19.1%, k16 8.7%, **k32 4.5%**
+(int8 stays under 1.3% everywhere; per-channel helps at every k). Two patterns
+hold across all four checkpoints: **in_proj is the most sensitive tensor at
+every k**, and the invariances (permutation, degenerate rotation) hold to
+~2e-7 on the quantized model under every scheme. The wider-PE k32 model is
+markedly more quantization-robust than k4/k8; noted, not yet explained.
+
 ## Status
 
 - [x] quantizer verified against the torch reference (tie-break-aware)
 - [x] per-layer SQNR/range report, all four shipped checkpoints
-- [x] drift ablation + invariance preservation, k16
-- [ ] drift ablation on the other three checkpoints (one command each)
+- [x] drift ablation + invariance preservation, all four checkpoints (A100)
 - [ ] task-level ablation through the benchmark pipeline (offline run)
