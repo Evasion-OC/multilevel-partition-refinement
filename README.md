@@ -89,7 +89,7 @@ matrices whose optimal cuts are very small.
 | `src/probe_coarsening.py`, `src/community_ssl.py` | The learned coarsening control, against label propagation |
 | `src/pretrain.py`, `src/train_ssl_transfer.py` | The pretraining pilot |
 | `src/make_train_corpus.py`, `data/prepare_data.py`, `data/make_social_benchmark.py` | Building the training pool and the test sets |
-| `src/demo.py` | Short demonstration: the checkpoint reports itself, the three invariances are measured live, and the two global branches are timed against each other |
+| `src/demo.py` | The live demonstration: strict checkpoint reload, the three invariances measured on the deployed weights, the two global branches timed against each other, and nine shipped graphs partitioned end to end against budget-matched METIS with KaHIP and Scotch as references |
 | `hpc/` | Slurm scripts for training, for the benchmark, and for the controls |
 | `models/` | The four deployed checkpoints, k = 4, 8, 16 and 32, each storing its own constructor arguments |
 

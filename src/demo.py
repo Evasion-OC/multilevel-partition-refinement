@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Live demo: the four claims that can be shown in a couple of minutes.
+"""Live demo: the claims that can be shown inside the demonstration window.
 
 The full benchmark is an HPC artefact and cannot be reproduced live (roughly
 four minutes per graph per seed on a laptop, times 67 graphs, times 3 seeds).
@@ -16,14 +16,17 @@ What CAN be shown live:
       engages at every gated level, the guard returns its verdict, the block
       sizes are printed with their sum checked against n, and the cut
       is compared with METIS at the same (reduced) trial budget, and with
-      KaHIP eco, KaHIP strong and Scotch at their own presets. Everything
-      printed is computed in this run; nothing is quoted from stored results.
+      KaHIP eco, KaHIP strong and Scotch at their own presets;
+  (5) the run then continues onto an extended tier of three larger archive
+      meshes at the same budget, and closes with the complete table.
+      Everything printed is computed in this run; nothing is quoted from
+      stored results.
 
 Everything below imports the real repository modules. Nothing is reimplemented
 for the demo, which is the point: a marker can follow any number here back into
 the code that produced the thesis.
 
-    python src/demo.py                # the whole demonstration, ~3.5 min
+    python src/demo.py                # the whole demonstration, ~8.5 min
 """
 from __future__ import annotations
 
@@ -134,12 +137,53 @@ def find_graphs():
     """The shipped benchmark graphs: a benchmark in miniature, in this order.
     Two headline wins (rdb3200l, conf5_0-4x4-14), a mesh win near parity
     (data), a tie (power), and two known parity-regime losses (uk, 3elt).
-    add20 also ships but is excluded from the default roster: its deep
-    hierarchy costs several minutes alone, past the viva's 10-minute
-    format; run it with --graph graphs/add20.graph."""
+    The default run continues past this roster onto the extended tier
+    (find_extended_graphs). add20 also ships but stays outside the default
+    run: its stalled-matching hierarchy alone costs about nine minutes;
+    run it with --graph graphs/add20.graph."""
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     names = ["rdb3200l.graph", "conf5_0-4x4-14.graph", "data.graph",
              "power.graph", "uk.graph", "3elt.graph"]
+    return [p for p in (os.path.join(here, "graphs", n) for n in names)
+            if os.path.exists(p)]
+
+
+def print_summary(summary):
+    """The closing table: the starred budget-matched pair beside the labelled
+    reference block. Printed after the six-graph roster, and again with
+    add20's row when the extended run lands."""
+    print()
+    print(f"  {'':24s} {'budget-matched comparison':^31} | {'reference (own presets)':^23}")
+    print(f"  {'graph':24s} {'ours':>7} {'METIS':>7} {'r':>7} {'verdict':>7} | {'eco':>7} {'strong':>7} {'Scotch':>7}")
+    print(f"  {'-' * 24} {'-' * 7} {'-' * 7} {'-' * 7} {'-' * 7} + {'-' * 7} {'-' * 7} {'-' * 7}")
+    for gname, cut, mc, comps, r, verdict in summary:
+        pair = [v for v in (cut, mc) if v is not None]
+        lo = min(pair)
+        def cell(v, starred=True):
+            if v is None:
+                return f"{'-':>7}"
+            mark = "*" if (starred and v <= lo) else " "
+            return f"{v:>6.0f}{mark}"
+        r_s = f"{r:.3f}" if r is not None else "-"
+        print(f"  {gname:24s} {cell(cut)} {cell(mc)} {r_s:>7} {verdict:>7} | "
+              f"{cell(comps.get('eco'), False)} {cell(comps.get('strong'), False)} "
+              f"{cell(comps.get('Scotch'), False)}")
+    print("  * lower of the budget-matched pair: the method against trials-matched")
+    print("    METIS (same number of trials, same seed), which is the comparison the")
+    print("    thesis makes. The reference solvers run once at their own presets and")
+    print("    are not budget-matched; the full-protocol comparison against them is")
+    print("    the Appendix G gallery.")
+
+
+def find_extended_graphs():
+    """The extended tier of the default run: three larger archive meshes,
+    n = 9,800 to 11,143, that stretch the demonstration to roughly the
+    length of its 10-minute window. This is the separator-ceiling regime
+    of Chapter 5, shown live at scale. add20 also ships but stays outside
+    the default run: its stalled-matching hierarchy alone costs about nine
+    minutes; run it with --graph graphs/add20.graph."""
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    names = ["crack.graph", "whitaker3.graph", "fe_4elt2.graph"]
     return [p for p in (os.path.join(here, "graphs", n) for n in names)
             if os.path.exists(p)]
 
@@ -157,8 +201,11 @@ def main():
     a = ap.parse_args()
     if a.model is None:
         a.model = find_checkpoint()
+    ext_graphs = []
     if a.graph is None:
         a.graph = find_graphs()
+        if not a.quick:
+            ext_graphs = find_extended_graphs()
     torch.manual_seed(0)
 
     # ---------------- (1) the deployed checkpoint, strictly reloaded ----------------
@@ -308,7 +355,19 @@ def main():
         print(f"                  (the thesis protocol is best-of-12, evolutionary")
         print(f"                   search on, three seeds; Chapter 5 carries those claims)")
         summary = []
-        for gpath in graphs:
+        for gpath in graphs + ext_graphs:
+            if ext_graphs and gpath == ext_graphs[0]:
+                if len(summary) > 1:
+                    print_summary(summary)
+                print()
+                print(RULE)
+                print(" (5) EXTENDED TIER: THREE LARGER ARCHIVE MESHES, LIVE")
+                print(RULE)
+                print("  The six-graph table above stands. The run continues onto three")
+                print("  larger meshes, n = 9,800 to 11,143, at the same live budget and")
+                print("  seed: the separator-ceiling regime of Chapter 5, at scale. Each")
+                print("  prints the same comparison, and their rows join the complete")
+                print("  table at the end of the run.")
             Gr = read_metis(gpath)
             gname = os.path.basename(gpath)
             print()
@@ -353,27 +412,7 @@ def main():
                 print(f"  reference       {shown}   (one run each, own presets, not budget-matched)")
             summary.append((gname, cut, mc, comps, r, verdict))
         if len(summary) > 1:
-            print()
-            print(f"  {'':24s} {'budget-matched comparison':^31} | {'reference (own presets)':^23}")
-            print(f"  {'graph':24s} {'ours':>7} {'METIS':>7} {'r':>7} {'verdict':>7} | {'eco':>7} {'strong':>7} {'Scotch':>7}")
-            print(f"  {'-' * 24} {'-' * 7} {'-' * 7} {'-' * 7} {'-' * 7} + {'-' * 7} {'-' * 7} {'-' * 7}")
-            for gname, cut, mc, comps, r, verdict in summary:
-                pair = [v for v in (cut, mc) if v is not None]
-                lo = min(pair)
-                def cell(v, starred=True):
-                    if v is None:
-                        return f"{'-':>7}"
-                    mark = "*" if (starred and v <= lo) else " "
-                    return f"{v:>6.0f}{mark}"
-                r_s = f"{r:.3f}" if r is not None else "-"
-                print(f"  {gname:24s} {cell(cut)} {cell(mc)} {r_s:>7} {verdict:>7} | "
-                      f"{cell(comps.get('eco'), False)} {cell(comps.get('strong'), False)} "
-                      f"{cell(comps.get('Scotch'), False)}")
-            print("  * lower of the budget-matched pair: the method against trials-matched")
-            print("    METIS (same number of trials, same seed), which is the comparison the")
-            print("    thesis makes. The reference solvers run once at their own presets and")
-            print("    are not budget-matched; the full-protocol comparison against them is")
-            print("    the Appendix G gallery.")
+            print_summary(summary)
         print()
         print("  This section demonstrates the machinery on one fixed seed; the")
         print("  benchmark claims are the 67-graph, 3-seed tables of Chapter 5.")
