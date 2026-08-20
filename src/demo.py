@@ -12,15 +12,13 @@ What CAN be shown live:
       of the eigenvectors, rotation inside a degenerate eigenspace;
   (3) the global branch is linear where dense attention is quadratic, on the
       same encoder object the pipeline uses;
-  (4) the pipeline runs end to end on six real archive graphs: the refiner
+  (4) the pipeline runs end to end on nine real archive graphs: the refiner
       engages at every gated level, the guard returns its verdict, the block
       sizes are printed with their sum checked against n, and the cut
       is compared with METIS at the same (reduced) trial budget, and with
-      KaHIP eco, KaHIP strong and Scotch at their own presets;
-  (5) the run then continues onto an extended tier of three larger archive
-      meshes at the same budget, and closes with the complete table.
-      Everything printed is computed in this run; nothing is quoted from
-      stored results.
+      KaHIP eco, KaHIP strong and Scotch at their own presets, closing
+      with one summary table. Everything printed is computed in this run;
+      nothing is quoted from stored results.
 
 Everything below imports the real repository modules. Nothing is reimplemented
 for the demo, which is the point: a marker can follow any number here back into
@@ -149,9 +147,8 @@ def find_graphs():
 
 
 def print_summary(summary):
-    """The closing table: the starred budget-matched pair beside the labelled
-    reference block. Printed after the six-graph roster, and again with
-    add20's row when the extended run lands."""
+    """The closing table: the starred budget-matched pair beside the
+    labelled reference block."""
     print()
     print(f"  {'':24s} {'budget-matched comparison':^31} | {'reference (own presets)':^23}")
     print(f"  {'graph':24s} {'ours':>7} {'METIS':>7} {'r':>7} {'verdict':>7} | {'eco':>7} {'strong':>7} {'Scotch':>7}")
@@ -168,11 +165,8 @@ def print_summary(summary):
         print(f"  {gname:24s} {cell(cut)} {cell(mc)} {r_s:>7} {verdict:>7} | "
               f"{cell(comps.get('eco'), False)} {cell(comps.get('strong'), False)} "
               f"{cell(comps.get('Scotch'), False)}")
-    print("  * lower of the budget-matched pair: the method against trials-matched")
-    print("    METIS (same number of trials, same seed), which is the comparison the")
-    print("    thesis makes. The reference solvers run once at their own presets and")
-    print("    are not budget-matched; the full-protocol comparison against them is")
-    print("    the Appendix G gallery.")
+    print("  * lower of the budget-matched pair (same trials, same seed);")
+    print("    reference solvers run once at their own presets")
 
 
 def find_extended_graphs():
@@ -223,9 +217,6 @@ def main():
         for key in ("k", "epsilon", "global_kind", "pe_kind", "d_model"):
             if key in ck:
                 print(f"  {key:15s} {ck[key]}")
-        print("  -> the checkpoint stores its own constructor arguments, and the")
-        print("     load is strict: a mismatch with the architecture would fail")
-        print("     rather than load silently. k=4 is the Chapter 5 configuration.")
     else:
         print(f"  (checkpoint not found at {a.model!r}; sections 2 and 3 use a")
         print("   fresh encoder, and section 4 is skipped)")
@@ -301,12 +292,6 @@ def main():
     print(f"  {'eigenvector sign flip  V -> VS':34s} {d_sign:12.2e}")
     print(f"  {'basis rotation, degenerate pair':34s} {d_basis:12.2e}")
     print(f"  {'vertex permutation  G -> PGP^T':34s} {d_perm:12.2e}")
-    worst = max(d_sign, d_basis, d_perm)
-    print()
-    print(f"  worst case {worst:.2e} -- the thesis claims ~1e-6 end to end.")
-    print("  These are exact symmetries of the construction, not fitted behaviour:")
-    print("  the filters see only eigenVALUES, and eigenvectors enter only through")
-    print("  the eigenprojector V diag(.) V^T, which is invariant to both.")
 
     # ---------------- (3) linear vs quadratic global branch ----------------
     print()
@@ -339,10 +324,6 @@ def main():
         ta, tl = ms("attn"), ms("lanczos")
         sp_s = f"{ta / tl:.2f}x" if (ta == ta and tl == tl and tl > 0) else "attn OOM"
         print(f"  {nn:>6} {ta:>13.1f} {tl:>12.1f} {sp_s:>9}")
-    print()
-    print("  The gap widens with n. Appendix I carries the same measurement to")
-    print("  n = 50,000, where dense attention runs out of memory and Lanczos")
-    print("  completes -- which is what makes a refiner at EVERY level feasible.")
 
     # ---------------- (4) the pipeline end to end, on real graphs ----------------
     graphs = [g for g in (a.graph or []) if os.path.exists(g)]
@@ -352,22 +333,8 @@ def main():
         print(" (4) END TO END, LIVE: PARTITION REAL ARCHIVE GRAPHS")
         print(RULE)
         print(f"  live budget     best-of-{LIVE_BOK} starts, one V-cycle, seed {LIVE_SEED}")
-        print(f"                  (the thesis protocol is best-of-12, evolutionary")
-        print(f"                   search on, three seeds; Chapter 5 carries those claims)")
         summary = []
         for gpath in graphs + ext_graphs:
-            if ext_graphs and gpath == ext_graphs[0]:
-                if len(summary) > 1:
-                    print_summary(summary)
-                print()
-                print(RULE)
-                print(" (5) EXTENDED TIER: THREE LARGER ARCHIVE MESHES, LIVE")
-                print(RULE)
-                print("  The six-graph table above stands. The run continues onto three")
-                print("  larger meshes, n = 9,800 to 11,143, at the same live budget and")
-                print("  seed: the separator-ceiling regime of Chapter 5, at scale. Each")
-                print("  prints the same comparison, and their rows join the complete")
-                print("  table at the end of the run.")
             Gr = read_metis(gpath)
             gname = os.path.basename(gpath)
             print()
@@ -413,9 +380,6 @@ def main():
             summary.append((gname, cut, mc, comps, r, verdict))
         if len(summary) > 1:
             print_summary(summary)
-        print()
-        print("  This section demonstrates the machinery on one fixed seed; the")
-        print("  benchmark claims are the 67-graph, 3-seed tables of Chapter 5.")
     elif not a.no_benchmark:
         print()
         print(RULE)
@@ -423,13 +387,6 @@ def main():
               + ("(no checkpoint)" if policy is None else "(no graph found)"))
         print(RULE)
 
-    print()
-    print(RULE)
-    print(" The full benchmark (67 graphs x 3 seeds x trials-matched METIS) is")
-    print(" an HPC artefact: roughly 4 minutes per graph per seed on a laptop.")
-    print(" Its records are in runs/*.jsonl and bench_data/*.tsv, and every figure")
-    print(" script re-derives its numbers from them and asserts them before drawing.")
-    print(RULE)
 
 
 if __name__ == "__main__":
