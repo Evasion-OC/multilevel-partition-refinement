@@ -21,7 +21,7 @@
 set -euo pipefail
 PROJECT_DIR="${PROJECT_DIR:-/home/kg1111r/multilevel-partition-refinement}"
 CKPT_STEM="${CKPT_STEM:-spectral_refiner_k16_eps_0_03}"
-GRAPH_DIR="${GRAPH_DIR:-${PROJECT_DIR}/graphs}"
+GRAPH_DIR="${GRAPH_DIR:-${PROJECT_DIR}/graphs}"   # shipped 7 demo graphs; set GRAPH_DIR=~/graphs/walshaw for the held-out set
 K_VALUE="${K_VALUE:-16}"; EPSILON="${EPSILON:-0.03}"; SEEDS="${SEEDS:-1}"
 MAX_N="${MAX_N:-20000}"; STOCHASTIC="${STOCHASTIC:-0}"; EXTRA="${EXTRA:-}"
 case "${SLURM_ARRAY_TASK_ID}" in
@@ -34,15 +34,24 @@ case "${SLURM_ARRAY_TASK_ID}" in
 esac
 mkdir -p "${PROJECT_DIR}/logs" "${PROJECT_DIR}/results"
 cd "${PROJECT_DIR}"
-module purge
-module load slurm/25.11.3 || true
-module load Python/3.11.10-GCCcore-12.3.0
-module load libffi/3.4.4-GCCcore-12.3.0
-source "${PROJECT_DIR}/.venv/bin/activate"
+# Environment: prefer the self-contained conda env (torch + scipy + scikit-learn + a prebuilt
+# pymetis from conda-forge). The module-Python venv of hpc/setup_env.sh cannot build pymetis
+# here because python3.11-devel is absent on the login and compute nodes. One-time setup:
+#   module load Anaconda3/2025.12-1
+#   conda install -y -p ~/envs/nanogpt -c conda-forge --override-channels pymetis scikit-learn scipy
+if [ -x "$HOME/envs/nanogpt/bin/python" ]; then
+  export PATH="$HOME/envs/nanogpt/bin:$PATH"
+elif [ -f "${PROJECT_DIR}/.venv/bin/activate" ]; then
+  module purge; module load slurm/25.11.3 || true
+  module load Python/3.11.10-GCCcore-12.3.0; module load libffi/3.4.4-GCCcore-12.3.0
+  source "${PROJECT_DIR}/.venv/bin/activate"
+else
+  echo "FATAL: no environment — conda env ~/envs/nanogpt or ${PROJECT_DIR}/.venv"; exit 1
+fi
 export PYTHONPATH="${PROJECT_DIR}/src:${PYTHONPATH:-}"
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}" MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
 export OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK}" PYTHONUNBUFFERED=1
-python -c "import pymetis" 2>/dev/null || pip install pymetis 2>/dev/null || echo "NOTE: pymetis unavailable; the METIS column is skipped."
+python -c "import pymetis" 2>/dev/null || echo "NOTE: pymetis unavailable; the METIS column is skipped (conda install -c conda-forge pymetis)."
 echo "bench-quant | ${TAG} | model ${MODEL} | graphs ${GRAPH_DIR} | k=${K_VALUE} | $(date)"
 python -u src/benchmark.py \
     --model "${MODEL}" --graph-dir "${GRAPH_DIR}" \
