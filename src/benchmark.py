@@ -82,9 +82,14 @@ def main():
     ap.add_argument("--resume", action="store_true",
                     help="skip graphs already present in --output and append (survive time-limit kills)")
     ap.add_argument("--output", type=str, default=None)
+    ap.add_argument("--spectral-rewrite", action="store_true",
+                    help="evaluate the spectral mixer via the reassociated forward (same map, faster)")
     args = ap.parse_args()
 
     policy, ck = load_spectral_actor_critic(args.model, map_location="cpu")
+    if args.spectral_rewrite:
+        from graph_transformer import set_spectral_rewrite
+        print(f"spectral rewrite enabled on {set_spectral_rewrite(policy, True)} mixer(s)", flush=True)
     min_vertices = ck.get("coarsen_min", 100)
     n_eigs = ck.get("n_eigs", 8)
     ml_max = args.ml_refine_max_n if args.ml_refine_max_n is not None else ck.get("ml_refine_max_n", 4000)

@@ -53,9 +53,14 @@ class LanczosSpectralMix(nn.Module):
     is no longer the quadratic bottleneck. Basis-invariant: acts through the eigenprojector
     V diag(.) V^T and g depends only on eigenvalues (equal on degenerate blocks)."""
 
-    def __init__(self, d_model, num_filters=8, phi_hidden=64):
+    def __init__(self, d_model, num_filters=8, phi_hidden=64, use_rewrite=False):
         super().__init__()
         self.m = num_filters
+        # use_rewrite: evaluate proj(V @ S) as V @ (S @ W^T) + b. Same map (matmul associativity),
+        # but the (n, d_model*m) intermediate is never built and the tail costs d*d_model*m*d_model
+        # + n*d*d_model instead of n*d_model*m*d_model multiplies. Measured on an A100: 4.2x at
+        # n=50k, ~10x at n=1M (fp32) for this module's forward. See kernels/README.md.
+        self.use_rewrite = use_rewrite
         self.phi = nn.Sequential(
             nn.Linear(1, phi_hidden), nn.ReLU(),
             nn.Linear(phi_hidden, phi_hidden), nn.ReLU(),
@@ -69,8 +74,22 @@ class LanczosSpectralMix(nn.Module):
         scaled = Vt_h.unsqueeze(-1) * g.unsqueeze(1).to(h.dtype)         # (d, d_model, m) diag(g_l) V^T h
         # single (n,d)@(d, d_model*m) matmul -- identical to einsum("nd,dcm->ncm") + reshape, but never
         # materialises the (n,d,d_model,m) intermediate, so the global branch is provably O(n*d_model*m).
+        if self.use_rewrite:
+            S = scaled.reshape(scaled.shape[0], -1)                      # (d, d_model*m)
+            M = S @ self.proj.weight.to(h.dtype).transpose(0, 1)         # (d, d_model), n-independent
+            out = eigvecs.to(h.dtype) @ M                                # (n, d_model)
+            return out + self.proj.bias.to(h.dtype) if self.proj.bias is not None else out
         Z = eigvecs.to(h.dtype) @ scaled.reshape(scaled.shape[0], -1)    # (n, d_model*m) = V (.)
         return self.proj(Z)                                              # (n, d_model)
+
+
+def set_spectral_rewrite(model, enabled=True):
+    """Toggle the reassociated forward on every LanczosSpectralMix in `model`. Returns the count."""
+    n = 0
+    for mod in model.modules():
+        if isinstance(mod, LanczosSpectralMix):
+            mod.use_rewrite = bool(enabled); n += 1
+    return n
 
 
 class GraphTransformerLayer(nn.Module):
